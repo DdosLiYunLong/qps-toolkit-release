@@ -1,0 +1,17 @@
+{
+  "licenseKey": "QPS-BBSA-HAEN-7RK7-YHH8",
+  "serverInfo": {
+    "ip": "192.168.25.160",
+    "hostname": "bogon",
+    "mac": "0a:96:28:3b:19:84",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "activatedAt": "2025-10-18T17:36:48.608Z",
+  "authData": {
+    "clientName": "李云龙",
+    "expiryDate": null,
+    "contactInfo": "telegram：@jobliyunlong"
+  },
+  "lastVerified": "2025-10-18T17:59:32.174Z"
+}
